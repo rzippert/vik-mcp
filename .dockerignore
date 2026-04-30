@@ -1,0 +1,10 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+.git/
+.gitignore
+References/
+openapi-simplified.json

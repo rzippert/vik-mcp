@@ -1,0 +1,452 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Vikunja MCP Simplified API",
+    "description": "A simplified subset of the Vikunja API designed for MCP server consumption. This spec documents the API endpoints actually used by the VikunjaMCP server — focused exclusively on task and project management with no authentication, migration, sharing, or admin endpoints.",
+    "version": "0.1.0",
+    "contact": {
+      "name": "Vikunja",
+      "url": "https://vikunja.io"
+    }
+  },
+  "servers": [
+    {
+      "url": "{base_url}/api/v1",
+      "description": "Vikunja instance",
+      "variables": {
+        "base_url": {
+          "default": "https://vikunja.example.com",
+          "description": "Base URL of your Vikunja instance"
+        }
+      }
+    }
+  ],
+  "security": [
+    {
+      "BearerAuth": []
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "API token from Vikunja Settings → API Tokens"
+      }
+    },
+    "schemas": {
+      "Project": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "readOnly": true },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "identifier": { "type": "string" },
+          "hex_color": { "type": "string" },
+          "is_archived": { "type": "boolean" },
+          "is_favorite": { "type": "boolean" },
+          "parent_project_id": { "type": "integer" },
+          "position": { "type": "number" },
+          "created": { "type": "string", "format": "date-time", "readOnly": true },
+          "updated": { "type": "string", "format": "date-time", "readOnly": true }
+        }
+      },
+      "Task": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "readOnly": true },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "done": { "type": "boolean" },
+          "priority": { "type": "integer", "minimum": 0, "maximum": 4 },
+          "due_date": { "type": "string", "format": "date-time" },
+          "start_date": { "type": "string", "format": "date-time" },
+          "end_date": { "type": "string", "format": "date-time" },
+          "hex_color": { "type": "string" },
+          "percent_done": { "type": "number", "minimum": 0, "maximum": 1 },
+          "repeat_after": { "type": "integer" },
+          "is_favorite": { "type": "boolean" },
+          "project_id": { "type": "integer" },
+          "labels": { "type": "array", "items": { "$ref": "#/components/schemas/Label" } },
+          "assignees": { "type": "array", "items": { "$ref": "#/components/schemas/User" } },
+          "reminders": { "type": "array", "items": { "$ref": "#/components/schemas/Reminder" } },
+          "comments": { "type": "array", "items": { "$ref": "#/components/schemas/TaskComment" } },
+          "created": { "type": "string", "format": "date-time", "readOnly": true },
+          "updated": { "type": "string", "format": "date-time", "readOnly": true }
+        }
+      },
+      "Label": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "readOnly": true },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "hex_color": { "type": "string" },
+          "created": { "type": "string", "format": "date-time", "readOnly": true },
+          "updated": { "type": "string", "format": "date-time", "readOnly": true }
+        }
+      },
+      "TaskComment": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "readOnly": true },
+          "comment": { "type": "string" },
+          "author": { "$ref": "#/components/schemas/User" },
+          "created": { "type": "string", "format": "date-time", "readOnly": true },
+          "updated": { "type": "string", "format": "date-time", "readOnly": true }
+        }
+      },
+      "Reminder": {
+        "type": "object",
+        "properties": {
+          "reminder": { "type": "string", "format": "date-time" },
+          "relative_to": { "type": "string" }
+        }
+      },
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "username": { "type": "string" },
+          "name": { "type": "string" }
+        }
+      },
+      "ProjectView": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "title": { "type": "string" },
+          "project_id": { "type": "integer" },
+          "view_kind": { "type": "string" }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/projects": {
+      "get": {
+        "operationId": "listProjects",
+        "summary": "List all projects",
+        "description": "Returns all projects the authenticated user has access to. Supports pagination and search.",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "per_page", "in": "query", "schema": { "type": "integer", "default": 50 } },
+          { "name": "s", "in": "query", "schema": { "type": "string" }, "description": "Search by project title" }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of projects",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Project" } } } }
+          }
+        }
+      },
+      "put": {
+        "operationId": "createProject",
+        "summary": "Create a new project",
+        "requestBody": {
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Project" } } }
+        },
+        "responses": {
+          "201": {
+            "description": "Created project",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Project" } } }
+          }
+        }
+      }
+    },
+    "/projects/{id}": {
+      "get": {
+        "operationId": "getProject",
+        "summary": "Get a single project",
+        "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } } ],
+        "responses": {
+          "200": {
+            "description": "Project details",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Project" } } }
+          }
+        }
+      },
+      "post": {
+        "operationId": "updateProject",
+        "summary": "Update a project",
+        "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } } ],
+        "requestBody": {
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Project" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated project",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Project" } } }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteProject",
+        "summary": "Delete a project",
+        "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } } ],
+        "responses": { "200": { "description": "Deleted" } }
+      }
+    },
+    "/projects/{id}/views": {
+      "get": {
+        "operationId": "listProjectViews",
+        "summary": "Get project views",
+        "description": "Returns all views for a project. Needed to get view ID for fetching tasks.",
+        "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } } ],
+        "responses": {
+          "200": {
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/ProjectView" } } } }
+          }
+        }
+      }
+    },
+    "/projects/{id}/views/{viewId}/tasks": {
+      "get": {
+        "operationId": "listProjectTasks",
+        "summary": "Get tasks in a project view",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } },
+          { "name": "viewId", "in": "path", "required": true, "schema": { "type": "integer" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer" } },
+          { "name": "per_page", "in": "query", "schema": { "type": "integer" } },
+          { "name": "s", "in": "query", "schema": { "type": "string" } },
+          { "name": "filter", "in": "query", "schema": { "type": "string" } },
+          { "name": "sort_by", "in": "query", "schema": { "type": "string" } },
+          { "name": "order_by", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Task" } } } }
+          }
+        }
+      }
+    },
+    "/projects/{id}/tasks": {
+      "put": {
+        "operationId": "createTask",
+        "summary": "Create a task in a project",
+        "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } } ],
+        "requestBody": {
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Task" } } }
+        },
+        "responses": {
+          "201": {
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Task" } } }
+          }
+        }
+      }
+    },
+    "/projects/{id}/projectusers": {
+      "get": {
+        "operationId": "listProjectUsers",
+        "summary": "List users with access to a project",
+        "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } } ],
+        "responses": {
+          "200": {
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/User" } } } }
+          }
+        }
+      }
+    },
+    "/tasks": {
+      "get": {
+        "operationId": "searchTasks",
+        "summary": "Search tasks across all projects",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer" } },
+          { "name": "per_page", "in": "query", "schema": { "type": "integer" } },
+          { "name": "s", "in": "query", "schema": { "type": "string" }, "description": "Text search" },
+          { "name": "filter", "in": "query", "schema": { "type": "string" }, "description": "Vikunja filter syntax" },
+          { "name": "sort_by", "in": "query", "schema": { "type": "string" } },
+          { "name": "order_by", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Task" } } } }
+          }
+        }
+      }
+    },
+    "/tasks/{id}": {
+      "get": {
+        "operationId": "getTask",
+        "summary": "Get full task details",
+        "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } } ],
+        "responses": {
+          "200": {
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Task" } } }
+          }
+        }
+      },
+      "post": {
+        "operationId": "updateTask",
+        "summary": "Update a task",
+        "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } } ],
+        "requestBody": {
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Task" } } }
+        },
+        "responses": {
+          "200": {
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Task" } } }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteTask",
+        "summary": "Delete a task",
+        "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } } ],
+        "responses": { "200": { "description": "Deleted" } }
+      }
+    },
+    "/tasks/{taskId}/comments": {
+      "get": {
+        "operationId": "listTaskComments",
+        "summary": "List comments on a task",
+        "parameters": [
+          { "name": "taskId", "in": "path", "required": true, "schema": { "type": "integer" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer" } },
+          { "name": "per_page", "in": "query", "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/TaskComment" } } } }
+          }
+        }
+      },
+      "put": {
+        "operationId": "createTaskComment",
+        "summary": "Add a comment to a task",
+        "parameters": [ { "name": "taskId", "in": "path", "required": true, "schema": { "type": "integer" } } ],
+        "requestBody": {
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskComment" } } }
+        },
+        "responses": {
+          "201": {
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskComment" } } }
+          }
+        }
+      }
+    },
+    "/tasks/{taskId}/comments/{commentId}": {
+      "post": {
+        "operationId": "updateTaskComment",
+        "summary": "Update a task comment",
+        "parameters": [
+          { "name": "taskId", "in": "path", "required": true, "schema": { "type": "integer" } },
+          { "name": "commentId", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "requestBody": {
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskComment" } } }
+        },
+        "responses": { "200": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskComment" } } } } }
+      },
+      "delete": {
+        "operationId": "deleteTaskComment",
+        "summary": "Delete a task comment",
+        "parameters": [
+          { "name": "taskId", "in": "path", "required": true, "schema": { "type": "integer" } },
+          { "name": "commentId", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": { "200": { "description": "Deleted" } }
+      }
+    },
+    "/tasks/{taskId}/labels/bulk": {
+      "post": {
+        "operationId": "bulkSetTaskLabels",
+        "summary": "Replace all labels on a task",
+        "parameters": [ { "name": "taskId", "in": "path", "required": true, "schema": { "type": "integer" } } ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "labels": { "type": "array", "items": { "$ref": "#/components/schemas/Label" } }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Labels updated" } }
+      }
+    },
+    "/tasks/{taskId}/assignees/bulk": {
+      "post": {
+        "operationId": "bulkSetTaskAssignees",
+        "summary": "Replace all assignees on a task",
+        "parameters": [ { "name": "taskId", "in": "path", "required": true, "schema": { "type": "integer" } } ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "assignees": { "type": "array", "items": { "$ref": "#/components/schemas/User" } }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Assignees updated" } }
+      }
+    },
+    "/labels": {
+      "get": {
+        "operationId": "listLabels",
+        "summary": "List all labels",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer" } },
+          { "name": "per_page", "in": "query", "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Label" } } } }
+          }
+        }
+      },
+      "put": {
+        "operationId": "createLabel",
+        "summary": "Create a label",
+        "requestBody": {
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Label" } } }
+        },
+        "responses": {
+          "201": {
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Label" } } }
+          }
+        }
+      }
+    },
+    "/labels/{id}": {
+      "get": {
+        "operationId": "getLabel",
+        "summary": "Get a single label",
+        "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } } ],
+        "responses": {
+          "200": {
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Label" } } }
+          }
+        }
+      },
+      "put": {
+        "operationId": "updateLabel",
+        "summary": "Update a label",
+        "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } } ],
+        "requestBody": {
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Label" } } }
+        },
+        "responses": {
+          "200": {
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Label" } } }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteLabel",
+        "summary": "Delete a label",
+        "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } } ],
+        "responses": { "200": { "description": "Deleted" } }
+      }
+    }
+  }
+}
