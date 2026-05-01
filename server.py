@@ -278,6 +278,8 @@ async def manage_project(
             "parent_project_id": parent_project_id,
         }.items():
             if val is not None:
+                if key == "is_archived" and isinstance(val, str):
+                    val = val.lower() == "true"
                 current[key] = val
         result = await _api_post(f"/projects/{project_id}", current)
         return json.dumps(result, indent=2)
@@ -424,7 +426,7 @@ async def manage_task(
 
         if reminders:
             body["reminders"] = [
-                {"reminder": r, "relative_to": "due_date"} for r in reminders
+                {"reminder": r} for r in reminders
             ]
 
         result = await _api_put(f"/projects/{project_id}/tasks", body)
@@ -452,7 +454,7 @@ async def manage_task(
 
         if reminders is not None:
             current["reminders"] = [
-                {"reminder": r, "relative_to": "due_date"} for r in reminders
+                {"reminder": r} for r in reminders
             ]
 
         result = await _api_post(f"/tasks/{task_id}", current)
@@ -492,6 +494,9 @@ def _set_task_fields(body: dict, local_vars: dict) -> None:
     for param_name, api_field in field_map.items():
         val = local_vars.get(param_name)
         if val is not None:
+            if api_field in ["done", "is_favorite"]:
+                if isinstance(val, str):
+                    val = val.lower() == "true"
             body[api_field] = val
 
 
