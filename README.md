@@ -135,12 +135,27 @@ uv run python server.py
 # Server will start on http://0.0.0.0:8000/mcp
 ```
 
-### Docker
+### Docker & Container Deployment
+
+The easiest way to run `vik-mcp` is using the official Docker image.
+
+#### Using the GitHub Container Registry (Recommended)
 ```bash
-# Build
+docker pull ghcr.io/rzippert/vik-mcp:latest
+
+docker run -d \
+  -p 8000:8000 \
+  -e VIKUNJA_BASE_URL=https://vikunja.example.com \
+  -e VIKUNJA_API_TOKEN=your-token-here \
+  ghcr.io/rzippert/vik-mcp:latest
+```
+
+#### Local Build
+```bash
+# Build locally
 docker build -t vikunjamcp .
 
-# Run
+# Run locally built image
 docker run -d \
   -p 8000:8000 \
   -e VIKUNJA_BASE_URL=https://vikunja.example.com \
