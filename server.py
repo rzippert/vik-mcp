@@ -725,9 +725,8 @@ async def resource_labels() -> str:
     return json.dumps(labels, indent=2)
 
 
-# ============================= PROMPTS ====================================
+# ============================= PROMPTS ==@mcp.prompt()
 
-@mcp.prompt()
 def plan_tasks(goal: str, project_id: int) -> str:
     """Break down a goal into actionable Vikunja tasks.
 
@@ -738,7 +737,7 @@ def plan_tasks(goal: str, project_id: int) -> str:
         goal: The high-level goal or objective to break down.
         project_id: The Vikunja project ID where tasks should be created.
     """
-    return f"""You are a task planning assistant connected to Vikunja.
+    return f"""You are a task planning assistant connected to Vikunja, trained in cognitive psychology and productivity science.
 
 The user wants to accomplish the following goal:
 "{goal}"
@@ -746,15 +745,18 @@ The user wants to accomplish the following goal:
 Tasks should be created in project ID {project_id}.
 
 Instructions:
-1. Break the goal into 3-7 concrete, actionable tasks.
+1. Break the goal down into 3-7 micro-tasks. They must be small enough to be completed in under 90 minutes (to align with human ultradian rhythms).
 2. For each task, determine:
-   - A clear, specific title
-   - A brief description with acceptance criteria
-   - Priority (1=low, 2=medium, 3=high, 4=urgent)
-   - Due date if applicable (use ISO 8601 format)
-3. Create all tasks using the manage_task tool with action="create".
-4. Consider task dependencies and order them logically.
-5. After creating all tasks, provide a summary of what was created.
+   - A clear, specific title starting with a physical VERB (e.g., "Draft", "Call", "Read").
+   - A brief description with exact acceptance criteria.
+   - Priority (1=low, 2=medium, 3=high, 4=urgent).
+   - Estimated duration (in minutes).
+   - Due date if applicable (ISO 8601).
+3. Identify the "Pareto Task" (the 1‑2 tasks that will drive 80% of the progress) and ensure they have the highest priority.
+4. Create all tasks using the manage_task tool with action="create".
+5. Consider task dependencies and order them logically.
+6. After creating all tasks, provide a summary of what was created, highlighting the very first physical action the user should take.
+"""e a summary of what was created.
 """
 
 
@@ -782,8 +784,51 @@ Review project ID {project_id} by following these steps:
    - Top 3 tasks to focus on next (with reasons)
    - Any overdue tasks that need immediate attention
    - Suggestions for improvement (e.g. tasks that should be reprioritized)
-"""
+"""@mcp.prompt()
 
+def make_my_day() -> str:
+    """Scan open tasks and propose a scientifically optimized plan for today.
+
+    Use this prompt when starting the day with a large backlog. The AI will 
+    review open tasks, select high-impact items that can actually be 
+    accomplished today, and structure them into an energy-optimized schedule.
+    """
+    return """You are a peak-performance executive assistant connected to Vikunja. Your goal is to review the user's broader backlog of open tasks, select the best ones to tackle today, and design a scientifically optimized workday.
+
+To \"make their day\", follow these steps carefully:
+
+Step 1: Gather the Available Work
+- Use the search_tasks tool to fetch a broad list of open, incomplete tasks across the user's projects. Do NOT restrict your search to tasks due today. Look for high-priority items, recently updated tasks, or unassigned backlog items.
+- (If you have access to a calendar tool, fetch today's events to know how much actual free time they have).
+
+Step 2: Evaluate and Select (The Rule of 3 & Impact vs. Effort)
+- Review the fetched tasks and play the role of a strict project manager. You must choose a realistic workload for a single human day.
+- Select the Top 1-3 Most Important Tasks (MITs). Look for high-priority tasks that will drive actual progress (Pareto Principle). If a task looks too large for one day, mentally break off the first actionable chunk for today's plan.
+- Select 3-5 "Shallow Tasks" (quick wins, small fixes, brief communications). 
+
+Step 3: Build the Schedule (Ultradian Rhythms & Time-Batching)
+Organize the selected tasks into a proposed daily schedule using time blocks. 
+- Deep Work Blocks: Assign the MITs to 90-minute uninterrupted blocks. 
+- Shallow Work Batch: Group the quick, shallow tasks into a single 30-to-45-minute block to prevent context switching.
+- Mandatory Rest: Explicitly schedule 15-20 minute breaks between deep work blocks to allow for cognitive recovery.
+
+Step 4: Propose the Plan
+Present the daily plan to the user in this exact format:
+
+### 🎯 Proposed Most Important Tasks (MITs) for Today
+[List the 1-3 high-impact tasks you selected from the backlog, and briefly explain *why* you chose them for today.]
+
+### 🗓️ Proposed Schedule (Implementation Intentions)
+* **Morning Deep Work (90 mins):** [Selected MIT]
+* **☕ Cognitive Break (20 mins):** Step away from the screen.
+* **Mid-Day Deep Work (90 mins):** [Selected MIT]
+* **⚡ Shallow Work Batch (45 mins):** [List the 3-5 quick administrative/shallow tasks you pulled from the backlog, grouped together]
+* **Afternoon Wrap-up:** Plan tomorrow's tasks.
+
+### ✂️ Task Breakdown Suggestion
+[If you noticed a massive task in the backlog that is clogging up their system, suggest a concrete first step to get it moving.]
+
+End your response by asking: \"I pulled these from your open tasks. Does this schedule look good, or should we swap any of these out for something else in your backlog?\""""
 
 # ---------------------------------------------------------------------------
 # Entry Point
