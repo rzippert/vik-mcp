@@ -52,46 +52,89 @@ Task managers often become "graveyards of good intentions" that trigger decision
 
 ## 🔌 Connecting to Clients
 
-By default, `vik-mcp` runs as an HTTP server using Server-Sent Events (SSE), making it perfect for containerized deployments and modern IDEs.
+The recommended way to use `vik-mcp` is via Docker using the images published to the GitHub Container Registry.
 
-### Cursor
-1. Open Cursor Settings > Features > MCP.
-2. Click **+ Add New MCP Server**.
-3. Set Name to `Vikunja`.
-4. Set Type to **SSE**.
-5. Set URL to `http://localhost:8000/mcp` (or your deployed URL).
-6. Click **Save**.
-
-### Windsurf
-1. Open Windsurf Settings > MCP.
-2. Click **Add Server**.
-3. Choose **SSE** as the connection type.
-4. Name it `Vikunja`.
-5. Enter the URL: `http://localhost:8000/mcp`.
-
-### Claude Desktop
-*Note: Claude Desktop natively expects `stdio` (command-line) execution rather than HTTP/SSE.* 
-
-If you want to use this with Claude Desktop locally, change the transport in `server.py` to `"stdio"` (`mcp.run(transport="stdio")`), then add this to your `claude_desktop_config.json`:
+### 1. Claude Desktop
+Add this to your `claude_desktop_config.json` (usually in `~/Library/Application Support/Claude/` on macOS or `%APPDATA%\Claude\` on Windows):
 
 ```json
 {
   "mcpServers": {
     "vikunja": {
-      "command": "uv",
+      "command": "docker",
       "args": [
         "run",
-        "python",
-        "/absolute/path/to/vik-mcp/server.py"
-      ],
-      "env": {
-        "VIKUNJA_BASE_URL": "https://vikunja.yourdomain.com",
-        "VIKUNJA_API_TOKEN": "your-api-token"
-      }
+        "-i",
+        "--rm",
+        "-e", "VIKUNJA_BASE_URL=https://vikunja.yourdomain.com",
+        "-e", "VIKUNJA_API_TOKEN=your-api-token",
+        "ghcr.io/rzippert/vik-mcp:latest"
+      ]
     }
   }
 }
 ```
+
+### 2. VS Code (Copilot)
+If you are using the GitHub Copilot extension with MCP support, add this to your settings:
+
+```json
+"github.copilot.chat.mcp.servers": {
+  "vikunja": {
+    "command": "docker",
+    "args": [
+      "run",
+      "-i",
+      "--rm",
+      "-e", "VIKUNJA_BASE_URL=https://vikunja.yourdomain.com",
+      "-e", "VIKUNJA_API_TOKEN=your-api-token",
+      "ghcr.io/rzippert/vik-mcp:latest"
+    ]
+  }
+}
+```
+
+### 3. Continue.dev
+Add this to your `config.json` (usually in `~/.continue/config.json`):
+
+```json
+"mcpServers": [
+  {
+    "name": "vikunja",
+    "command": "docker",
+    "args": [
+      "run",
+      "-i",
+      "--rm",
+      "-e", "VIKUNJA_BASE_URL=https://vikunja.yourdomain.com",
+      "-e", "VIKUNJA_API_TOKEN=your-api-token",
+      "ghcr.io/rzippert/vik-mcp:latest"
+    ]
+  }
+]
+```
+
+### 4. Advanced: Docker Compose (Streaming HTTP Mode)
+If you prefer to run the server as a persistent background service (e.g., on a remote server or local cluster), you can use Docker Compose and connect via HTTP.
+
+**docker-compose.yml**
+```yaml
+services:
+  vik-mcp:
+    image: ghcr.io/rzippert/vik-mcp:latest
+    ports:
+      - "8000:8000"
+    environment:
+      - VIKUNJA_BASE_URL=https://vikunja.yourdomain.com
+      - VIKUNJA_API_TOKEN=your-api-token
+    restart: unless-stopped
+```
+
+**VS Code / Cursor / Windsurf (HTTP Config)**
+| Setting | Value |
+|---------|-------|
+| Transport Type | Streamable HTTP |
+| URL | `http://localhost:8000/mcp` |
 
 ---
 
