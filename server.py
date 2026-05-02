@@ -725,7 +725,31 @@ async def resource_labels() -> str:
     return json.dumps(labels, indent=2)
 
 
-# ============================= PROMPTS ==@mcp.prompt()
+@mcp.resource("vikunja://user/last-actions")
+async def resource_last_actions() -> str:
+    """The last 10 tasks the user has interacted with.
+
+    Since Vikunja doesn't provide a direct activity log, this resource
+    returns tasks sorted by their last update time. This gives the agent
+    context about what the user has been working on recently (e.g. marking
+    tasks as done, rescheduling, or changing descriptions).
+    """
+    params = {
+        "sort_by": "updated",
+        "order_by": "desc",
+        "per_page": 10,
+    }
+    tasks = await _paginated_get("/tasks", params)
+    result = [_compact_task(t) for t in tasks]
+    # Add the full updated timestamp back for better context
+    for i, t in enumerate(tasks):
+        result[i]["updated"] = t.get("updated")
+    return json.dumps(result, indent=2)
+
+
+# ============================= PROMPTS =====================================
+
+@mcp.prompt()
 
 def plan_tasks(goal: str, project_id: int) -> str:
     """Break down a goal into actionable Vikunja tasks.
@@ -756,7 +780,6 @@ Instructions:
 4. Create all tasks using the manage_task tool with action="create".
 5. Consider task dependencies and order them logically.
 6. After creating all tasks, provide a summary of what was created, highlighting the very first physical action the user should take.
-"""e a summary of what was created.
 """
 
 
@@ -784,7 +807,9 @@ Review project ID {project_id} by following these steps:
    - Top 3 tasks to focus on next (with reasons)
    - Any overdue tasks that need immediate attention
    - Suggestions for improvement (e.g. tasks that should be reprioritized)
-"""@mcp.prompt()
+"""
+
+@mcp.prompt()
 
 def make_my_day() -> str:
     """Scan open tasks and propose a scientifically optimized plan for today.
