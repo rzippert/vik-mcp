@@ -446,6 +446,19 @@ async def manage_task(
         if not task_id:
             return "Error: 'task_id' is required for update."
 
+        update_fields = [
+            title, description, done, priority, due_date, start_date, end_date,
+            hex_color, percent_done, repeat_after, is_favorite,
+            labels, assignees, reminders,
+        ]
+        if all(f is None for f in update_fields):
+            return (
+                "Error: 'update' requires at least one field to change. Pass any of: "
+                "title, description, done, priority, due_date, start_date, end_date, "
+                "hex_color, percent_done, repeat_after, is_favorite, labels, "
+                "assignees, reminders. To mark a task done, use complete_task."
+            )
+
         # Fetch current task state
         current = await _api_get(f"/tasks/{task_id}")
 
@@ -549,6 +562,49 @@ async def _set_task_assignees(task_id: int, usernames: list[str]) -> None:
             )
     except httpx.HTTPStatusError as e:
         logger.error(f"Failed to set assignees on task {task_id}: {e}")
+
+
+@mcp.tool()
+async def complete_task(task_id: int) -> str:
+    """Mark a task as done. Use this whenever the user finishes a task.
+
+    Idempotent — completing an already-done task is a no-op.
+
+    Note on recurring tasks: if the task has `repeat_after > 0`, Vikunja
+    advances the due/start dates to the next occurrence instead of flipping
+    `done` to true. In that case the returned object shows `done: false` and
+    a `recurrence_advanced: true` flag is added — this is success, not a
+    failure to retry.
+
+    Args:
+        task_id: The ID of the task to mark complete.
+    """
+    current = await _api_get(f"/tasks/{task_id}")
+    if current.get("done"):
+        return json.dumps(current, indent=2)
+    is_recurring = (current.get("repeat_after") or 0) > 0
+    current["done"] = True
+    result = await _api_post(f"/tasks/{task_id}", current)
+    if is_recurring and not result.get("done"):
+        result["recurrence_advanced"] = True
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+async def reopen_task(task_id: int) -> str:
+    """Mark a task as not done (reopen a completed task).
+
+    Idempotent — reopening an already-incomplete task is a no-op.
+
+    Args:
+        task_id: The ID of the task to reopen.
+    """
+    current = await _api_get(f"/tasks/{task_id}")
+    if not current.get("done"):
+        return json.dumps(current, indent=2)
+    current["done"] = False
+    result = await _api_post(f"/tasks/{task_id}", current)
+    return json.dumps(result, indent=2)
 
 
 @mcp.tool()
