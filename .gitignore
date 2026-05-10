@@ -6,3 +6,5 @@ __pycache__/
 dist/
 *.txt
 test-instance/
+
+CLAUDE.md
