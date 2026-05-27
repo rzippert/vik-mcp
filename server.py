@@ -487,7 +487,9 @@ async def manage_task(
             return "Error: 'task_id' is required for move."
         if not project_id:
             return "Error: 'project_id' is required for move."
-        result = await _api_post(f"/tasks/{task_id}/project/{project_id}", {})
+        current = await _api_get(f"/tasks/{task_id}")
+        current["project_id"] = project_id
+        result = await _api_post(f"/tasks/{task_id}", current)
         return json.dumps(result, indent=2)
 
     elif action == "delete":
