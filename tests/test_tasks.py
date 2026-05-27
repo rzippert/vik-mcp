@@ -36,6 +36,39 @@ async def test_task_lifecycle(test_project):
     assert "Deleted successfully" in res
 
 @pytest.mark.asyncio
+async def test_task_move(test_project):
+    project_id = test_project["id"]
+
+    # Create a second project to move into
+    res = await manage_project("create", title="Move Target Project")
+    target_project = json.loads(res)
+    target_id = target_project["id"]
+
+    try:
+        res = await manage_task("create", project_id=project_id, title="Task to Move")
+        task_id = json.loads(res)["id"]
+
+        # Move to target project
+        res = await manage_task("move", task_id=task_id, project_id=target_id)
+        task = json.loads(res)
+        assert task["project_id"] == target_id
+
+        # Cleanup
+        await manage_task("delete", task_id=task_id)
+    finally:
+        await manage_project("delete", project_id=target_id)
+
+
+@pytest.mark.asyncio
+async def test_move_missing_args():
+    res = await manage_task("move", task_id=999)
+    assert "project_id" in res
+
+    res = await manage_task("move", project_id=999)
+    assert "task_id" in res
+
+
+@pytest.mark.asyncio
 async def test_boolean_coercion(test_project):
     project_id = test_project["id"]
     res = await manage_task("create", project_id=project_id, title="Coercion Task")

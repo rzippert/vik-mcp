@@ -385,7 +385,7 @@ async def manage_task(
     assignees: list[str] | None = None,
     reminders: list[str] | None = None,
 ) -> str:
-    """Create, update, or delete a task — the main tool for task management.
+    """Create, update, delete, or move a task — the main tool for task management.
 
     This is a high-level tool that handles the common task operations in a single
     call. For updates, you only need to provide the fields you want to change.
@@ -394,13 +394,13 @@ async def manage_task(
       - "create": Creates a new task. Requires `project_id` and `title`.
       - "update": Updates an existing task. Requires `task_id`. Only provide fields
         you want to change — all others remain untouched.
+      - "move": Moves a task to a different project. Requires `task_id` and `project_id`.
       - "delete": Deletes a task. Requires `task_id`.
 
     Args:
-        action: One of "create", "update", or "delete".
-        task_id: Task ID — required for update and delete.
-        project_id: Project ID — required for create.
-        title: Task title.
+        action: One of "create", "update", "move", or "delete".
+        task_id: Task ID — required for update, move, and delete.
+        project_id: Project ID — required for create and move.
         description: Task description (supports markdown).
         done: Whether the task is completed.
         priority: Priority level (0=unset, 1=low, 2=medium, 3=high, 4=urgent).
@@ -456,7 +456,8 @@ async def manage_task(
                 "Error: 'update' requires at least one field to change. Pass any of: "
                 "title, description, done, priority, due_date, start_date, end_date, "
                 "hex_color, percent_done, repeat_after, is_favorite, labels, "
-                "assignees, reminders. To mark a task done, use complete_task."
+                "assignees, reminders. To mark a task done, use complete_task. "
+                "To move a task to another project, use action='move' with project_id."
             )
 
         # Fetch current task state
@@ -481,12 +482,20 @@ async def manage_task(
         final = await _api_get(f"/tasks/{task_id}")
         return json.dumps(final, indent=2)
 
+    elif action == "move":
+        if not task_id:
+            return "Error: 'task_id' is required for move."
+        if not project_id:
+            return "Error: 'project_id' is required for move."
+        result = await _api_post(f"/tasks/{task_id}/project/{project_id}", {})
+        return json.dumps(result, indent=2)
+
     elif action == "delete":
         if not task_id:
             return "Error: 'task_id' is required for delete."
         return await _api_delete(f"/tasks/{task_id}")
 
-    return f"Error: Unknown action '{action}'. Use 'create', 'update', or 'delete'."
+    return f"Error: Unknown action '{action}'. Use 'create', 'update', 'move', or 'delete'."
 
 
 def _set_task_fields(body: dict, local_vars: dict) -> None:
