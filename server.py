@@ -19,6 +19,7 @@ import sys
 from typing import Any
 
 import httpx
+import mcp.types as mcp_types
 from fastmcp import FastMCP
 from fastmcp.server.dependencies import get_http_headers
 
@@ -157,21 +158,39 @@ async def _api_delete(path: str) -> str:
     return "Deleted successfully."
 
 
-def _compact_task(t: dict) -> dict:
-    """Return a compact representation of a task for list views."""
-    return {
+def _compact_task(t: dict, project_titles: dict[int, str] | None = None) -> dict:
+    """Return a compact representation of a task for list views.
+
+    If `project_titles` is provided, also includes a `project` field with the
+    human-readable title alongside the numeric `project_id`.
+    """
+    project_id = t.get("project_id")
+    result = {
         "id": t.get("id"),
         "title": t.get("title"),
         "done": t.get("done"),
         "priority": t.get("priority"),
         "due_date": t.get("due_date"),
-        "project_id": t.get("project_id"),
+        "project_id": project_id,
         "percent_done": t.get("percent_done"),
         "labels": [lb.get("title") for lb in (t.get("labels") or [])],
         "assignees": [
             a.get("username") for a in (t.get("assignees") or [])
         ],
     }
+    if project_titles is not None and project_id is not None:
+        result["project"] = project_titles.get(project_id, "")
+    return result
+
+
+async def _project_title_map() -> dict[int, str]:
+    """Fetch all projects and return an {id: title} map. Returns {} on failure."""
+    try:
+        projects = await _paginated_get("/projects")
+    except Exception as e:
+        logger.warning(f"project_title_map: list failed: {e}")
+        return {}
+    return {p.get("id"): (p.get("title") or "") for p in projects if p.get("id") is not None}
 
 
 def _compact_project(p: dict) -> dict:
@@ -183,6 +202,73 @@ def _compact_project(p: dict) -> dict:
         "is_archived": p.get("is_archived"),
         "identifier": p.get("identifier"),
     }
+
+
+async def _resolve_project(ref: str) -> int | None:
+    """Resolve a project reference (numeric ID or title) to a numeric ID.
+
+    Used by resources whose URI template accepts a human-friendly project
+    name. Falls back to numeric ID if the ref is all digits, so legacy
+    `vik://projects/42` style references keep working.
+    """
+    if ref.isdigit():
+        return int(ref)
+    try:
+        projects = await _paginated_get("/projects")
+    except Exception as e:
+        logger.warning(f"resolve_project: list failed for {ref!r}: {e}")
+        return None
+    needle = ref.casefold()
+    for p in projects:
+        if (p.get("title") or "").casefold() == needle:
+            return p.get("id")
+    return None
+
+
+async def _list_project_tasks(project_id: int) -> list[dict]:
+    """Fetch all tasks in a project via its default view."""
+    views = await _api_get(f"/projects/{project_id}/views")
+    if not views:
+        return []
+    view_id = views[0]["id"]
+    return await _paginated_get(f"/projects/{project_id}/views/{view_id}/tasks")
+
+
+async def _resolve_task(project_id: int, ref: str) -> int | None:
+    """Resolve a task reference (numeric ID or title within a project) to a numeric ID.
+
+    Title match is case-insensitive exact. Returns None if not found.
+    """
+    if ref.isdigit():
+        return int(ref)
+    tasks_list = await _list_project_tasks(project_id)
+    needle = ref.casefold()
+    for t in tasks_list:
+        if (t.get("title") or "").casefold() == needle:
+            return t.get("id")
+    return None
+
+
+async def _resolve_label(ref: str) -> dict | None:
+    """Resolve a label reference (numeric ID or title) to its full label object.
+
+    Returns None if not found. Title match is case-insensitive exact.
+    """
+    if ref.isdigit():
+        try:
+            return await _api_get(f"/labels/{int(ref)}")
+        except httpx.HTTPStatusError:
+            pass
+    try:
+        labels_list = await _paginated_get("/labels")
+    except Exception as e:
+        logger.warning(f"resolve_label: list failed for {ref!r}: {e}")
+        return None
+    needle = ref.casefold()
+    for lb in labels_list:
+        if (lb.get("title") or "").casefold() == needle:
+            return lb
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -729,8 +815,8 @@ async def manage_comments(
 
 # ============================= RESOURCES ==================================
 
-@mcp.resource("vikunja://projects")
-async def resource_projects() -> str:
+@mcp.resource("vik://projects")
+async def projects() -> str:
     """All projects the authenticated user has access to.
 
     Provides a read-only overview of every project including id, title,
@@ -742,47 +828,111 @@ async def resource_projects() -> str:
     return json.dumps(result, indent=2)
 
 
-@mcp.resource("vikunja://projects/{project_id}")
-async def resource_project(project_id: int) -> str:
+@mcp.resource("vik://projects/{project}")
+async def project(project: str) -> str:
     """Full details of a single project.
 
-    Returns the complete project object including its views, settings,
-    and owner information.
+    Accepts a project title (case-insensitive exact match) or a numeric
+    project ID. Returns the complete project object including its views,
+    settings, and owner information.
     """
-    project = await _api_get(f"/projects/{project_id}")
-    return json.dumps(project, indent=2)
+    pid = await _resolve_project(project)
+    if pid is None:
+        return json.dumps({"error": f"Project '{project}' not found"}, indent=2)
+    return json.dumps(await _api_get(f"/projects/{pid}"), indent=2)
 
 
-@mcp.resource("vikunja://projects/{project_id}/tasks")
-async def resource_project_tasks(project_id: int) -> str:
-    """All tasks in a specific project.
+@mcp.resource("vik://projects/{project}/{task}")
+async def project_task(project: str, task: str) -> str:
+    """A single task within a project, or the project's full task list.
 
-    Returns compact task summaries for every task in the project.
-    Useful for getting an overview before making changes.
+    Accepts:
+      - `vik://projects/{project}/tasks` (literal "tasks") → compact list of
+        every task in the project.
+      - `vik://projects/{project}/{task_title}` → full details of a single
+        task matched case-insensitively by title (numeric task IDs also work).
+
+    Caveat: a task literally titled "tasks" will be shadowed by the list
+    behavior and isn't reachable via this URI — use `vik://projects` to find
+    its numeric ID and access it directly.
     """
-    views = await _api_get(f"/projects/{project_id}/views")
-    if not views:
-        return json.dumps([], indent=2)
-    view_id = views[0]["id"]
-    tasks = await _paginated_get(f"/projects/{project_id}/views/{view_id}/tasks")
-    result = [_compact_task(t) for t in tasks]
+    pid = await _resolve_project(project)
+    if pid is None:
+        return json.dumps({"error": f"Project '{project}' not found"}, indent=2)
+
+    if task == "tasks":
+        proj = await _api_get(f"/projects/{pid}")
+        title_map = {pid: proj.get("title") or ""}
+        tasks_list = await _list_project_tasks(pid)
+        result = [_compact_task(t, title_map) for t in tasks_list]
+        return json.dumps(result, indent=2)
+
+    tid = await _resolve_task(pid, task)
+    if tid is None:
+        return json.dumps(
+            {"error": f"Task '{task}' not found in project '{project}'"}, indent=2
+        )
+    return json.dumps(await _api_get(f"/tasks/{tid}"), indent=2)
+
+
+@mcp.resource("vik://tasks")
+async def tasks() -> str:
+    """All tasks across every project the user has access to.
+
+    Returns compact task summaries for every task, regardless of project.
+    Useful for a global backlog overview without having to enumerate
+    projects first. For filtered or searchable views, use the
+    `search_tasks` tool instead.
+    """
+    tasks_list = await _paginated_get("/tasks")
+    title_map = await _project_title_map()
+    result = [_compact_task(t, title_map) for t in tasks_list]
     return json.dumps(result, indent=2)
 
 
-@mcp.resource("vikunja://labels")
-async def resource_labels() -> str:
+@mcp.resource("vik://labels")
+async def labels() -> str:
     """All labels available to the authenticated user.
 
     Returns the complete list of labels with their IDs, titles, colors,
     and descriptions. Useful for knowing which labels exist before assigning
-    them to tasks.
+    them to tasks, and for citing a label by name via `vik://labels/{label}`.
     """
-    labels = await _paginated_get("/labels")
-    return json.dumps(labels, indent=2)
+    labels_list = await _paginated_get("/labels")
+    return json.dumps(labels_list, indent=2)
 
 
-@mcp.resource("vikunja://user/last-actions")
-async def resource_last_actions() -> str:
+@mcp.resource("vik://labels/{label}")
+async def label_details(label: str) -> str:
+    """Full details of a single label.
+
+    Accepts a label title (case-insensitive exact match) or a numeric label ID.
+    """
+    lb = await _resolve_label(label)
+    if lb is None:
+        return json.dumps({"error": f"Label '{label}' not found"}, indent=2)
+    return json.dumps(lb, indent=2)
+
+
+@mcp.resource("vik://labels/{label}/tasks")
+async def label_tasks(label: str) -> str:
+    """All tasks tagged with a specific label.
+
+    Accepts a label title (case-insensitive) or a numeric label ID. Returns
+    compact task summaries (across every project) filtered by label.
+    """
+    lb = await _resolve_label(label)
+    if lb is None:
+        return json.dumps({"error": f"Label '{label}' not found"}, indent=2)
+    label_id = lb.get("id")
+    tasks_list = await _paginated_get("/tasks", {"filter": f"labels = {label_id}"})
+    title_map = await _project_title_map()
+    result = [_compact_task(t, title_map) for t in tasks_list]
+    return json.dumps(result, indent=2)
+
+
+@mcp.resource("vik://last")
+async def last_actions() -> str:
     """The last 10 tasks the user has interacted with.
 
     Since Vikunja doesn't provide a direct activity log, this resource
@@ -795,10 +945,12 @@ async def resource_last_actions() -> str:
         "order_by": "desc",
         "per_page": 10,
     }
-    tasks = await _paginated_get("/tasks", params)
-    result = [_compact_task(t) for t in tasks]
-    # Add the full updated timestamp back for better context
-    for i, t in enumerate(tasks):
+    tasks_list = await _api_get("/tasks", params)
+    if not isinstance(tasks_list, list):
+        tasks_list = []
+    title_map = await _project_title_map()
+    result = [_compact_task(t, title_map) for t in tasks_list]
+    for i, t in enumerate(tasks_list):
         result[i]["updated"] = t.get("updated")
     return json.dumps(result, indent=2)
 
@@ -910,6 +1062,89 @@ Present the daily plan to the user in this exact format:
 [If you noticed a massive task in the backlog that is clogging up their system, suggest a concrete first step to get it moving.]
 
 End your response by asking: \"I pulled these from your open tasks. Does this schedule look good, or should we swap any of these out for something else in your backlog?\""""
+
+# ============================= COMPLETIONS ================================
+# FastMCP 3.2.4 doesn't surface the MCP `completion/complete` handler in its
+# public API, so we register one directly on the underlying low-level server.
+# This is what powers Tab-completion of URI parameters in MCP clients
+# (e.g. `@vik://projects/<TAB>` listing available project IDs).
+
+_COMPLETION_LIMIT = 100
+
+
+def _completion_payload(matches: list[str]) -> mcp_types.Completion:
+    return mcp_types.Completion(
+        values=matches[:_COMPLETION_LIMIT],
+        total=len(matches),
+        hasMore=len(matches) > _COMPLETION_LIMIT,
+    )
+
+
+async def _complete_titles(items: list[dict], partial: str) -> mcp_types.Completion:
+    needle = partial.casefold()
+    matches: list[str] = []
+    for it in items:
+        title = it.get("title") or ""
+        if not needle or needle in title.casefold():
+            matches.append(title)
+    return _completion_payload(matches)
+
+
+async def _complete_project(partial: str) -> mcp_types.Completion:
+    try:
+        projects = await _paginated_get("/projects")
+    except Exception as e:
+        logger.warning(f"completion: failed to list projects: {e}")
+        return _completion_payload([])
+    return await _complete_titles(projects, partial)
+
+
+async def _complete_label(partial: str) -> mcp_types.Completion:
+    try:
+        labels_list = await _paginated_get("/labels")
+    except Exception as e:
+        logger.warning(f"completion: failed to list labels: {e}")
+        return _completion_payload([])
+    return await _complete_titles(labels_list, partial)
+
+
+async def _complete_task(partial: str, project_ref: str | None) -> mcp_types.Completion:
+    if not project_ref:
+        return _completion_payload([])
+    pid = await _resolve_project(project_ref)
+    if pid is None:
+        return _completion_payload([])
+    try:
+        tasks_list = await _list_project_tasks(pid)
+    except Exception as e:
+        logger.warning(f"completion: failed to list tasks for project {pid}: {e}")
+        return _completion_payload([])
+    needle = partial.casefold()
+    matches: list[str] = []
+    if not needle or "tasks".startswith(needle):
+        matches.append("tasks")
+    for t in tasks_list:
+        title = t.get("title") or ""
+        if not needle or needle in title.casefold():
+            matches.append(title)
+    return _completion_payload(matches)
+
+
+@mcp._mcp_server.completion()
+async def _complete(
+    ref: mcp_types.PromptReference | mcp_types.ResourceTemplateReference,
+    argument: mcp_types.CompletionArgument,
+    context: mcp_types.CompletionContext | None,
+) -> mcp_types.Completion | None:
+    if argument.name == "project":
+        return await _complete_project(argument.value or "")
+    if argument.name == "label":
+        return await _complete_label(argument.value or "")
+    if argument.name == "task":
+        project_ref = (context.arguments or {}).get("project") if context else None
+        return await _complete_task(argument.value or "", project_ref)
+    return None
+
 
 # ---------------------------------------------------------------------------
 # Entry Point

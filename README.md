@@ -10,7 +10,7 @@ Building an MCP server for a complex task manager requires more than just passin
 The native Vikunja API has over 80+ endpoints. Exposing all of them would overwhelm an LLM's context window and lead to hallucinated tool calls. 
 * **Flattened CRUD:** We condensed task management into a single `manage_task` tool. The LLM simply declares an `action` ("create", "update", "delete") and passes the fields it wants to change. The server handles fetching the current state and merging partial updates.
 * **Auto-Pagination:** LLMs struggle with multi-step pagination loops. `vik-mcp` automatically collects all pages behind the scenes and returns a unified array.
-* **Resources over Tools:** We expose `vikunja://` URIs as Resources so the LLM can instantly read project states and label lists without burning a tool call just to look around.
+* **Resources over Tools:** We expose `vik://` URIs as Resources so the LLM can instantly read project states and label lists without burning a tool call just to look around.
 
 ### 2. Prompt Selection: Designing for Human Executive Function
 Task managers often become "graveyards of good intentions" that trigger decision fatigue. The built-in prompts turn the LLM from a simple database-entry bot into an **executive-functioning coach**, built on scientifically proven productivity principles:
@@ -36,10 +36,15 @@ Task managers often become "graveyards of good intentions" that trigger decision
 ### Resources (Read-only Context)
 | URI | Description |
 |-----|-------------|
-| `vikunja://projects` | All projects overview |
-| `vikunja://projects/{id}` | Single project details |
-| `vikunja://projects/{id}/tasks` | All tasks in a project |
-| `vikunja://labels` | All available labels |
+| `vik://projects` | All projects overview |
+| `vik://projects/{project}` | Single project details — accepts project title (case-insensitive) or numeric ID |
+| `vik://projects/{project}/tasks` | All tasks in a project (literal `tasks` keyword) |
+| `vik://projects/{project}/{task}` | A single task by title within a project (numeric ID also works) |
+| `vik://tasks` | All tasks across every project (global backlog) |
+| `vik://labels` | All available labels |
+| `vik://labels/{label}` | Single label details — accepts label title (case-insensitive) or numeric ID |
+| `vik://labels/{label}/tasks` | All tasks tagged with a specific label |
+| `vik://last` | 10 most recently updated tasks |
 
 ### Prompts
 | Prompt | Description |
